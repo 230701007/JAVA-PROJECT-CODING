@@ -1,0 +1,213 @@
+import javax.swing.*;	
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.sql.*;
+
+public class ElectionManagementSystem extends JFrame {
+
+    // Database connection parameters
+    private static final String DB_URL = "jdbc:mysql://localhost:3306/election_db";
+    private static final String DB_USER = "root"; // Replace with your MySQL username
+    private static final String DB_PASSWORD = "yourpassword"; // Replace with your MySQL password
+
+    // GUI Components
+    private JTextField idField, voterNameField, candidateNameField, constituencyField;
+    private JTable table;
+    private DefaultTableModel tableModel;
+
+    public ElectionManagementSystem() {
+        // Frame setup
+        setTitle("Election Management System");
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(800, 600);
+        setLayout(new BorderLayout());
+
+        // Top Panel: Form for input
+        JPanel formPanel = new JPanel(new GridLayout(5, 2, 10, 10));
+        formPanel.setBorder(BorderFactory.createTitledBorder("Election Info"));
+
+        formPanel.add(new JLabel("ID (Auto-generated):"));
+        idField = new JTextField();
+        idField.setEditable(false);
+        formPanel.add(idField);
+
+        formPanel.add(new JLabel("Voter Name:"));
+        voterNameField = new JTextField();
+        formPanel.add(voterNameField);
+
+        formPanel.add(new JLabel("Candidate Name:"));
+        candidateNameField = new JTextField();
+        formPanel.add(candidateNameField);
+
+        formPanel.add(new JLabel("Constituency:"));
+        constituencyField = new JTextField();
+        formPanel.add(constituencyField);
+
+        add(formPanel, BorderLayout.NORTH);
+
+        // Center Panel: Table to display records
+        tableModel = new DefaultTableModel(new String[]{"ID", "Voter Name", "Candidate Name", "Constituency"}, 0);
+        table = new JTable(tableModel);
+        JScrollPane tableScrollPane = new JScrollPane(table);
+        table.setFillsViewportHeight(true);
+        add(tableScrollPane, BorderLayout.CENTER);
+
+        // Bottom Panel: Buttons for operations
+        JPanel buttonPanel = new JPanel(new GridLayout(1, 4, 10, 10));
+        JButton addButton = new JButton("Add");
+        JButton updateButton = new JButton("Update");
+        JButton deleteButton = new JButton("Delete");
+        JButton refreshButton = new JButton("Refresh");
+
+        buttonPanel.add(addButton);
+        buttonPanel.add(updateButton);
+        buttonPanel.add(deleteButton);
+        buttonPanel.add(refreshButton);
+        add(buttonPanel, BorderLayout.SOUTH);
+
+        // Add action listeners for buttons
+        addButton.addActionListener(this::addRecord);
+        updateButton.addActionListener(this::updateRecord);
+        deleteButton.addActionListener(this::deleteRecord);
+        refreshButton.addActionListener(e -> fetchRecords());
+
+        // Load initial data
+        initializeDatabase();
+        fetchRecords();
+    }
+
+    // Initialize database (Create table if not exists)
+    private void initializeDatabase() {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement()) {
+            String createTableSQL = """
+                CREATE TABLE IF NOT EXISTS ElectionInfo (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    voter_name VARCHAR(100) NOT NULL,
+                    candidate_name VARCHAR(100) NOT NULL,
+                    constituency VARCHAR(100) NOT NULL
+                );
+            """;
+            stmt.execute(createTableSQL);
+        } catch (SQLException e) {
+            showErrorDialog("Error initializing database: " + e.getMessage());
+        }
+    }
+
+    // Fetch all records from the database and populate the table
+    private void fetchRecords() {
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD);
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT * FROM ElectionInfo")) {
+            tableModel.setRowCount(0); // Clear existing rows
+            while (rs.next()) {
+                tableModel.addRow(new Object[]{
+                        rs.getInt("id"), rs.getString("voter_name"),
+                        rs.getString("candidate_name"), rs.getString("constituency")
+                });
+            }
+        } catch (SQLException e) {
+            showErrorDialog("Error fetching records: " + e.getMessage());
+        }
+    }
+
+    // Add a new record to the database
+    private void addRecord(ActionEvent e) {
+        String voterName = voterNameField.getText();
+        String candidateName = candidateNameField.getText();
+        String constituency = constituencyField.getText();
+
+        if (voterName.isEmpty() || candidateName.isEmpty()) {
+            showErrorDialog("Voter Name and Candidate Name are required!");
+            return;
+        }
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            String insertSQL = "INSERT INTO ElectionInfo (voter_name, candidate_name, constituency) VALUES (?, ?, ?)";
+            PreparedStatement stmt = conn.prepareStatement(insertSQL);
+            stmt.setString(1, voterName);
+            stmt.setString(2, candidateName);
+            stmt.setString(3, constituency);
+            stmt.executeUpdate();
+            showInfoDialog("Record added successfully!");
+            fetchRecords();
+        } catch (SQLException ex) {
+            showErrorDialog("Error adding record: " + ex.getMessage());
+        }
+    }
+
+    // Update a selected record in the database
+    private void updateRecord(ActionEvent e) {
+        int selectedRow = table.getSelectedRow();
+        if (selectedRow == -1) {
+            showErrorDialog("Please select a record to update!");
+            return;
+        }
+
+        int id = (int) tableModel.getValueAt(selectedRow, 0);
+        String voterName = voterNameField.getText();
+        String candidateName = candidateNameField.getText();
+        String constituency = constituencyField.getText();
+
+        if (voterName.isEmpty() || candidateName.isEmpty()) {
+            showErrorDialog("Voter Name and Candidate Name are required!");
+            return;
+        }
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            String updateSQL = "UPDATE ElectionInfo SET voter_name = ?, candidate_name = ?, constituency = ? WHERE id = ?";
+            PreparedStatement stmt = conn.prepareStatement(updateSQL);
+            stmt.setString(1, voterName);
+            stmt.setString(2, candidateName);
+            stmt.setString(3, constituency);
+            stmt.setInt(4, id);
+            stmt.executeUpdate();
+            showInfoDialog("Record updated successfully!");
+            fetchRecords();
+        } catch (SQLException ex) {
+            showErrorDialog("Error updating record: " + ex.getMessage());
+        }
+    }
+
+    // Delete a selected record from the database
+    private void deleteRecord(ActionEvent e) {
+        int selectedRow = table.getSelectedRow();
+        if (selectedRow == -1) {
+            showErrorDialog("Please select a record to delete!");
+            return;
+        }
+
+        int id = (int) tableModel.getValueAt(selectedRow, 0);
+
+        try (Connection conn = DriverManager.getConnection(DB_URL, DB_USER, DB_PASSWORD)) {
+            String deleteSQL = "DELETE FROM ElectionInfo WHERE id = ?";
+            PreparedStatement stmt = conn.prepareStatement(deleteSQL);
+            stmt.setInt(1, id);
+            stmt.executeUpdate();
+            showInfoDialog("Record deleted successfully!");
+            fetchRecords();
+        } catch (SQLException ex) {
+            showErrorDialog("Error deleting record: " + ex.getMessage());
+        }
+    }
+
+    // Utility method to show error messages
+    private void showErrorDialog(String message) {
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE);
+    }
+
+    // Utility method to show information messages
+    private void showInfoDialog(String message) {
+        JOptionPane.showMessageDialog(this, message, "Info", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    // Main method
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            ElectionManagementSystem app = new ElectionManagementSystem();
+            app.setVisible(true);
+        });
+    }
+}
+
